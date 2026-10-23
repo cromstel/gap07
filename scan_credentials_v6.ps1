@@ -61,7 +61,8 @@ Param(
     [string]$ConfigPath,
     [string]$OutputPath,
     [string]$Hostname = $env:COMPUTERNAME,
-    [string[]]$ScanPath = @()
+    [string[]]$ScanPath = @(),
+    [switch]$Remediate
 )
 
 ###############################################################################
@@ -117,7 +118,7 @@ $DefaultConfig = @{
                                      # -ScanPath / AdditionalScanPaths (selected drives/directories) are scanned.
 }
 
-$CsvHeader = 'hostname,share_name,share_type,file_path,detection_type,matched_pattern,severity,context_snippet,language,timestamp,scan_user'
+$CsvHeader = 'hostname,share_name,share_type,file_path,detection_type,matched_pattern,severity,context_snippet,language,timestamp,scan_user,remediation_status'
 
 ###############################################################################
 # Config
@@ -231,7 +232,8 @@ function Write-CsvRow {
         (Escape-CsvField $Row.detection_type), (Escape-CsvField $Row.matched_pattern),
         (Escape-CsvField $Row.severity), (Escape-CsvField $Row.context_snippet),
         (Escape-CsvField $Row.language), (Escape-CsvField $Row.timestamp),
-        (Escape-CsvField $Row.scan_user)
+        (Escape-CsvField $Row.scan_user),
+        (Escape-CsvField ($Row.remediation_status -as [string]))
     )
     $Writer.WriteLine($fields -join ',')
 }
@@ -1285,6 +1287,70 @@ function Invoke-FullScan {
 }
 
 ###############################################################################
+# Remediation — post-scan redaction for MEDIUM/HIGH credential matches
+###############################################################################
+function Invoke-Remediation {
+    param([string]$OutputDir, [string[]]$Targets)
+    $keywords = @('secret','password','passwd','pwd','credential','api_key','.txt','.env')
+    $severityFilter = @('MEDIUM','HIGH')
+    foreach ($target in $Targets) {
+        $safe = Sanitize-TargetName -Path $target
+        $credFile = Join-Path $OutputDir $safe '2_credentials.csv'
+        if (-not (Test-Path $credFile)) { continue }
+        $lines = Get-Content -Path $credFile -Encoding UTF8 -ErrorAction SilentlyContinue
+        if ($lines.Count -le 1) { continue }
+        $header = $lines[0]
+        $updated = [System.Collections.Generic.List[string]]::new()
+        [void]$updated.Add($header)
+        $filePaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        for ($i = 1; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i]
+            $fields = $line -split ','
+            if ($fields.Count -lt 12) { [void]$updated.Add($line); continue }
+            $sev = $fields[6].Trim()
+            $path = $fields[3].Trim()
+            $match = $fields[5].Trim()
+            $snippet = $fields[7].Trim()
+            $status = ''
+            if ($severityFilter -contains $sev) {
+                $hit = $false
+                foreach ($kw in $keywords) {
+                    if ($line -match $kw -or $snippet -match $kw -or $match -match $kw -or $path -match '\.(txt|env)$') {
+                        $hit = $true; break
+                    }
+                }
+                if ($hit) {
+                    $status = 'pending'
+                    if ($path -and (Test-Path $path)) {
+                        try {
+                            $attr = [System.IO.File]::GetAttributes($path)
+                            if ($attr -band [System.IO.FileAttributes]::ReadOnly) {
+                                throw 'File is read-only'
+                            }
+                            $orig = $path + '.orig'
+                            [System.IO.File]::Copy($path, $orig, $true)
+                            $content = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+                            $re = [regex]::new("(?i)(\b(?:secret|password|passwd|pwd|credential|api_key)\b\s*[:=]\s*)([^\s\r\n]+)")
+                            $content = $re.Replace($content, '`$1[REDACTED]')
+                            [System.IO.File]::WriteAllText($path, $content, [System.Text.Encoding]::UTF8)
+                            $status = 'remediated'
+                        } catch {
+                            $status = 'failed'
+                        }
+                    } else {
+                        $status = 'skipped'
+                    }
+                }
+            }
+            $fields += , $status
+            [void]$updated.Add(($fields -join ','))
+        }
+        $updatedPath = $credFile
+        [System.IO.File]::WriteAllLines($updatedPath, $updated, [System.Text.Encoding]::UTF8)
+    }
+}
+
+###############################################################################
 # Banner / Summary
 ###############################################################################
 
@@ -1549,6 +1615,11 @@ function Main {
 
         try { Invoke-FullScan -Hostname $Hostname -ScanPaths $targetArray -Config $config }
         catch { Write-Error -ErrorAction Continue -Message "Phase 2/3 failed: $($_.Exception.Message)" }
+
+        if ($Remediate) {
+            try { Invoke-Remediation -OutputDir $Script:OutputDir -Targets $targetArray }
+            catch { Write-Warning "Remediation failed: $($_.Exception.Message)" }
+        }
 
     } finally {
         Close-AllWriters
