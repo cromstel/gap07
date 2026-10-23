@@ -256,6 +256,7 @@ function Initialize-Phase1Buffer {
     $stream = [System.IO.StreamWriter]::new($tempPath, $false, [System.Text.UTF8Encoding]::new($true))
     $stream.AutoFlush = $false
     $stream.WriteLine($CsvHeader)
+    $stream.Flush()
     $Script:Phase1Writer = $stream
     return $tempPath
 }
@@ -1349,7 +1350,7 @@ function Write-SummaryFile {
 
     $summaryPath = Join-Path $OutputDir 'summary.txt'
     $sb = [System.Text.StringBuilder]::new()
-    [void]$sb.AppendLine("Credential Exposure Audit - $Hostname")
+    [void]$sb.AppendLine("Credential Exposure Audit - $Hostname (v2.3.1)")
     [void]$sb.AppendLine("==========================================")
     [void]$sb.AppendLine("Scan start:       $($StartTime.ToUniversalTime().ToString('o'))")
     [void]$sb.AppendLine("Scan end:         $([datetime]::UtcNow.ToString('o'))")
@@ -1386,7 +1387,7 @@ function Write-SummaryFile {
         [void]$sb.AppendLine("    shares: $shareCount | credentials: $credCount | vaults: $vaultCount")
     }
 
-    [System.IO.File]::WriteAllText($summaryPath, $sb.ToString())
+    [System.IO.File]::WriteAllText($summaryPath, $sb.ToString(), [System.Text.Encoding]::UTF8)
 
     $border = '=' * 78
     Write-Host ""
