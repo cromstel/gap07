@@ -1,5 +1,10 @@
 # GAP07 — Credential Exposure Audit Platform
 
+<div align="center" style="background:linear-gradient(135deg,#0a1628 0%,#0f2b45 60%,#152d4c 100%);padding:28px 24px;border-radius:10px;border-left:6px solid #c9a227;box-shadow:0 4px 20px rgba(10,22,40,0.35);margin:8px 0;">
+  <h1 style="margin:0;font-family:'Segoe UI',system-ui,sans-serif;font-size:26px;font-weight:700;color:#f0ecdb;letter-spacing:0.5px;">GAP07 — Credential Exposure Audit <span style="color:#c9a227;">v2.3.1</span></h1>
+  <p style="margin:6px 0 0;font-family:'Segoe UI',system-ui,sans-serif;font-size:15px;color:#cfd4db;">Windows file-server audit — pure PowerShell, zero dependencies</p>
+</div>
+
 Windows file-server credential audit (PowerShell, pure — zero dependencies). Version **v2.3.1**.
 
 ## What it does
