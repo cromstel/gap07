@@ -1440,7 +1440,10 @@ function Show-Banner {
     Write-Host $border
     Write-Host -ForegroundColor Cyan "  CREDENTIAL EXPOSURE AUDIT PLATFORM - v2.3.1"
     Write-Host $border
-    Write-Host -ForegroundColor Cyan "  Author             : Samuel Lamptey  |  Dept: Nordics IT  |  Email: cromstel@gmail.com  |  Company: CITGROUP"
+    Write-Host -ForegroundColor Cyan "  Author  : Samuel Lamptey"
+    Write-Host -ForegroundColor Cyan "  Dept    : Nordics IT"
+    Write-Host -ForegroundColor Cyan "  Email   : cromstel@gmail.com"
+    Write-Host -ForegroundColor Cyan "  Company : CITGROUP"
     Write-Host "  Mode               : $Mode"
     Write-Host "  Hostname           : $Hostname"
     Write-Host "  Scan User          : $Script:ScanUser"
