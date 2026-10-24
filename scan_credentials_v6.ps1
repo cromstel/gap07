@@ -62,7 +62,8 @@ Param(
     [string]$OutputPath,
     [string]$Hostname = $env:COMPUTERNAME,
     [string[]]$ScanPath = @(),
-    [switch]$Remediate
+    [switch]$Remediate,
+    [switch]$PurgeBackups
 )
 
 ###############################################################################
@@ -1293,6 +1294,7 @@ function Invoke-Remediation {
     param([string]$OutputDir, [string[]]$Targets)
     $keywords = @('secret','password','passwd','pwd','credential','api_key','.txt','.env')
     $severityFilter = @('MEDIUM','HIGH')
+    $Script:OrigBackups = [System.Collections.Generic.List[string]]::new()
     foreach ($target in $Targets) {
         $safe = Sanitize-TargetName -Path $target
         $credFile = Join-Path $OutputDir $safe '2_credentials.csv'
@@ -1329,11 +1331,21 @@ function Invoke-Remediation {
                             }
                             $orig = $path + '.orig'
                             [System.IO.File]::Copy($path, $orig, $true)
-                            $content = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
                             $re = [regex]::new("(?i)(\b(?:secret|password|passwd|pwd|credential|api_key)\b\s*[:=]\s*)([^\s\r\n]+)")
-                            $content = $re.Replace($content, '`$1[REDACTED]')
-                            [System.IO.File]::WriteAllText($path, $content, [System.Text.Encoding]::UTF8)
+                            $sr = [System.IO.StreamReader]::new($path, [System.Text.Encoding]::UTF8)
+                            $tmpPath = $path + '.tmp_redact'
+                            $sw = [System.IO.StreamWriter]::new($tmpPath, $false, [System.Text.Encoding]::UTF8)
+                            try {
+                                while ($null -ne ($rawLine = $sr.ReadLine())) {
+                                    [void]$sw.WriteLine(($re.Replace($rawLine, '`$1[REDACTED]')))
+                                }
+                            } finally {
+                                $sr.Close(); $sw.Close()
+                            }
+                            [System.IO.File]::Move($tmpPath, $path, $true)
                             $status = 'remediated'
+                            [void]$filePaths.Add($path)
+                            [void]$filePaths.Add($orig)
                         } catch {
                             $status = 'failed'
                         }
@@ -1347,7 +1359,45 @@ function Invoke-Remediation {
         }
         $updatedPath = $credFile
         [System.IO.File]::WriteAllLines($updatedPath, $updated, [System.Text.Encoding]::UTF8)
+        if ($filePaths.Count -gt 0) {
+            $Script:OrigBackups.AddRange($filePaths)
+        }
     }
+}
+
+function Invoke-BackupPurge {
+    param()
+    if (-not $Script:OrigBackups -or $Script:OrigBackups.Count -eq 0) { return }
+    $backupFiles = $Script:OrigBackups | Sort-Object -Unique
+    $deleted = 0
+    $failed = 0
+    $count = $backupFiles.Count
+    $confirmed = $false
+    try {
+        $answer = Read-Host -Prompt "[!] $count .orig backup file(s) contain original secret values. Confirm deletion? (y/N)"
+        $confirmed = ($answer -match '^[Yy]')
+    } catch {
+        $confirmed = $false
+    }
+    if ($confirmed) {
+        foreach ($origPath in $backupFiles) {
+            try {
+                Remove-Item -Path $origPath -Force
+                $deleted++
+            } catch {
+                $failed++
+            }
+        }
+    } else {
+        $count = 0
+    }
+    $Script:OrigBackupPurgeStats = @{
+        created = $count
+        deleted = $deleted
+        failed = $failed
+        confirmed = $confirmed
+    }
+    Write-Output "Backup purge: created=$count deleted=$deleted failed=$failed (confirmed=$confirmed)"
 }
 
 ###############################################################################
@@ -1451,6 +1501,14 @@ function Write-SummaryFile {
         if (Test-Path $vaultFile) { $vaultCount = [Math]::Max(0, ([System.IO.File]::ReadAllLines($vaultFile)).Length - 1) }
         [void]$sb.AppendLine("  $target")
         [void]$sb.AppendLine("    shares: $shareCount | credentials: $credCount | vaults: $vaultCount")
+    }
+
+    if ($Script:OrigBackupPurgeStats) {
+        [void]$sb.AppendLine("Backup purge:")
+        [void]$sb.AppendLine("  backups_created: $($Script:OrigBackupPurgeStats.created)")
+        [void]$sb.AppendLine("  backups_deleted: $($Script:OrigBackupPurgeStats.deleted)")
+        [void]$sb.AppendLine("  backups_failed:  $($Script:OrigBackupPurgeStats.failed)")
+        [void]$sb.AppendLine("  purge_confirmed: $($Script:OrigBackupPurgeStats.confirmed)")
     }
 
     [System.IO.File]::WriteAllText($summaryPath, $sb.ToString(), [System.Text.Encoding]::UTF8)
@@ -1619,6 +1677,9 @@ function Main {
         if ($Remediate) {
             try { Invoke-Remediation -OutputDir $Script:OutputDir -Targets $targetArray }
             catch { Write-Warning "Remediation failed: $($_.Exception.Message)" }
+            if ($PurgeBackups -and $Script:OrigBackups) {
+                try { Invoke-BackupPurge } catch { Write-Warning "Backup purge failed: $($_.Exception.Message)" }
+            }
         }
 
     } finally {
