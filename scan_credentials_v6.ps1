@@ -1,4 +1,12 @@
 <#
++======================================================================+
+|  CITGROUP  |  Nordics IT  |  Credential Audit Script v2.3.1     |
++======================================================================+
+|  Author  : Samuel Lamptey                                          |
+|  Email   : cromstel@gmail.com                                      |
+|  Dept    : Nordics IT                                              |
+|  Company : CITGROUP                                                |
++======================================================================+
 .SYNOPSIS
     Credential exposure auditing script for Windows file servers.
 .DESCRIPTION
