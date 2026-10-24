@@ -1440,6 +1440,7 @@ function Show-Banner {
     Write-Host $border
     Write-Host "  CREDENTIAL EXPOSURE AUDIT PLATFORM - v2.3.1"
     Write-Host $border
+    Write-Host "  Author  : Samuel Lamptey  |  Dept: Nordics IT  |  Email: cromstel@gmail.com  |  Company: CITGROUP"
     Write-Host "  Mode               : $Mode"
     Write-Host "  Hostname           : $Hostname"
     Write-Host "  Scan User          : $Script:ScanUser"
